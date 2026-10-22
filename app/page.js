@@ -8,6 +8,8 @@ export default function Home() {
   const [context, setContext] = useState('');
   const [logs, setLogs] = useState([]);
   const [copied, setCopied] = useState(false);
+  const [groqKey, setGroqKey] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
     const savedCtx = localStorage.getItem('angvey-context');
@@ -18,6 +20,8 @@ export default function Home() {
         setLogs(JSON.parse(savedLogs));
       } catch (e) {}
     }
+    const savedKey = localStorage.getItem('angvey-groq-key');
+    if (savedKey) setGroqKey(savedKey);
   }, []);
 
   const saveContext = (newCtx) => {
@@ -28,6 +32,11 @@ export default function Home() {
   const saveLogs = (newLogs) => {
     setLogs(newLogs);
     localStorage.setItem('angvey-logs', JSON.stringify(newLogs));
+  };
+
+  const saveGroqKey = (key) => {
+    setGroqKey(key);
+    localStorage.setItem('angvey-groq-key', key);
   };
 
   const calculateReliability = (steps, ctxLen) => {
@@ -70,6 +79,44 @@ export default function Home() {
     setTask('');
   };
 
+  const suggestAICheckpoints = async () => {
+    if (!task.trim() || !groqKey) {
+      alert('Please enter a task and save your Groq API key first.');
+      return;
+    }
+    setAiLoading(true);
+    try {
+      const prompt = `You are an expert in reliable AI agents. For this task: "${task}". Suggest 4-6 concrete checkpoint steps to prevent silent failures and context drift. Return ONLY a JSON array of objects with "step" and "detail" keys. Example: [{"step":"Validate inputs","detail":"Check required fields and bounds"}]`;
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${groqKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 500
+        })
+      });
+      if (!res.ok) throw new Error('API error');
+      const data = await res.json();
+      const content = data.choices[0].message.content;
+      const jsonMatch = content.match(/\[.*\]/s);
+      if (jsonMatch) {
+        const suggested = JSON.parse(jsonMatch[0]);
+        setTraces(suggested.map(s => ({ ...s, status: 'ok' })));
+        alert('AI checkpoints suggested and loaded into Latest Trace. Review and then Execute if desired.');
+      } else {
+        alert('Could not parse AI response. Try again.');
+      }
+    } catch (e) {
+      alert('Failed to call Groq: ' + e.message + '. Check key and network.');
+    }
+    setAiLoading(false);
+  };
+
   const copyTrace = () => {
     if (traces.length === 0) return;
     const text = `AngveyCore Trace\nTask: ${logs[0]?.task || ''}\nReliability: ${logs[0]?.reliability || 'N/A'}%\n\nSteps:\n` + 
@@ -85,6 +132,35 @@ export default function Home() {
     saveContext('');
     saveLogs([]);
     setTraces([]);
+  };
+
+  const exportAudit = () => {
+    const data = { logs, context, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `angvey-audit-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importAudit = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (data.logs) saveLogs(data.logs);
+        if (data.context) saveContext(data.context);
+        setTraces([]);
+        alert('Audit trail imported successfully.');
+      } catch (err) {
+        alert('Invalid JSON file.');
+      }
+    };
+    reader.readAsText(file);
   };
 
   return (
@@ -105,12 +181,30 @@ export default function Home() {
             placeholder="Describe a task (e.g. Analyze latest agent frameworks for reliability risks and propose checkpoints)..."
             style={{ width: '100%', minHeight: 100, padding: 12, borderRadius: 8, background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155', marginBottom: 12, fontSize: 15 }}
           />
-          <button
-            onClick={runAgent}
-            style={{ background: '#3b82f6', color: 'white', padding: '12px 24px', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 15 }}
-          >
-            Execute with Full Trace
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              onClick={runAgent}
+              style={{ background: '#3b82f6', color: 'white', padding: '12px 24px', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 15 }}
+            >
+              Execute with Full Trace
+            </button>
+            <button
+              onClick={suggestAICheckpoints}
+              disabled={aiLoading}
+              style={{ background: '#8b5cf6', color: 'white', padding: '12px 24px', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 15, opacity: aiLoading ? 0.6 : 1 }}
+            >
+              {aiLoading ? 'Thinking...' : 'AI Suggest Checkpoints'}
+            </button>
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <input
+              type="password"
+              value={groqKey}
+              onChange={(e) => saveGroqKey(e.target.value)}
+              placeholder="Optional: Groq API key for AI suggestions (stored locally)"
+              style={{ width: '100%', padding: 8, borderRadius: 6, background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155', fontSize: 13 }}
+            />
+          </div>
         </div>
 
         <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 16 }}>
@@ -157,7 +251,16 @@ export default function Home() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
         <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 16 }}>
-          <h2 style={{ marginTop: 0 }}>Run History</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 style={{ marginTop: 0 }}>Run History</h2>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={exportAudit} style={{ background: '#334155', color: '#e2e8f0', padding: '4px 8px', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>Export</button>
+              <label style={{ background: '#334155', color: '#e2e8f0', padding: '4px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>
+                Import
+                <input type="file" accept=".json" onChange={importAudit} style={{ display: 'none' }} />
+              </label>
+            </div>
+          </div>
           {logs.length === 0 ? (
             <p style={{ color: '#64748b' }}>No runs yet. Execute a task to build the audit trail.</p>
           ) : (
@@ -197,7 +300,7 @@ export default function Home() {
           <li><strong>OpenAI Agent Builder shutdown (Nov 30):</strong> Code-first reliability tooling is the only durable path.</li>
           <li><strong>Need durable state + checkpoints:</strong> Inspired by LangGraph, Temporal, and production agent reports.</li>
         </ul>
-        <p style={{ color: '#94a3b8', fontSize: 14 }}>ANGVEY is building the reliability layer agents desperately need. Previous features preserved and extended.</p>
+        <p style={{ color: '#94a3b8', fontSize: 14 }}>ANGVEY is building the reliability layer agents desperately need. Previous features preserved and extended. New: AI checkpoint suggestions + audit export/import.</p>
       </div>
 
       <footer style={{ marginTop: '2rem', color: '#64748b', fontSize: 13, textAlign: 'center' }}>
