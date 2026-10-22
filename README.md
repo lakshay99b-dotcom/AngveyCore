@@ -16,7 +16,7 @@ This is the **only project** the daily automation works on. All other repositori
 **Reliable Agent Trace & Context Hub**  
 Attacking the highly painful, underserved problem of AI agents that fail silently in production (no usable traces) and lose all context between sessions.  
 
-**Today's improvement (2026-10-22):** Added full run history with localStorage persistence, reliability scoring (factoring context length to detect drift risk), visual context health indicator with pruning, copy-to-share traces, timeline-style steps, and an insights section on current production failure modes (silent failures, context drift, Agent Builder shutdown). Previous core tracing + context memory fully preserved and extended.
+**Today's improvement (2026-10-22):** Added optional Groq-powered AI checkpoint suggestions (key stored locally in localStorage, no hard-coding) to generate concrete reliability steps for any task, plus full JSON export/import of audit trails and context for backup and sharing. Previous full run history, reliability scoring, context health/pruning, copy traces, and insights fully preserved. UI structure, layout, and visual design unchanged.
 
 Inspired by fast-rising frameworks: LangGraph (stateful graphs + checkpoints), CrewAI, OpenClaw (personal agents), Mastra, Temporal durable execution, and production agent reports from G2, Databricks, and others tracked Oct 2026.
 
